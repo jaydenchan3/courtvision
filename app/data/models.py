@@ -81,8 +81,12 @@ CREATE TABLE IF NOT EXISTS player_stats (
 -- UNIQUE(player_id) is the database-level guarantee behind the "duplicate
 -- player rejected" test. The 13-player cap is app logic: SQLite cannot express
 -- "at most N rows", and the user needs a message, not an integrity error.
+-- Deliberately NOT AUTOINCREMENT. That keyword makes SQLite remember the
+-- highest id ever used in sqlite_sequence, which DELETE FROM does not reset,
+-- so ids would climb on every re-seed and the seed would stop being
+-- deterministic. Plain INTEGER PRIMARY KEY restarts at 1 on an empty table.
 CREATE TABLE IF NOT EXISTS user_roster (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    id         INTEGER PRIMARY KEY,
     player_id  INTEGER NOT NULL UNIQUE REFERENCES players(id),
     added_at   TEXT NOT NULL
 );

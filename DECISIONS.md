@@ -92,6 +92,7 @@ spending quota.
 | `/players` | 200 — cursor pagination (`meta.next_cursor`); `team` is a nested object |
 | `/games` | 200 — cursor pagination; 30+ fields; `home_team`/`visitor_team` nested |
 | `/standings` | **401 — not included in the free tier** |
+| `/players/active` | **401 — also not in the free tier** |
 
 **`/standings` is excluded from the MVP.** The 401 persisted while sibling
 endpoints were returning 429 on the same key, which isolates it to tier gating
@@ -134,6 +135,47 @@ boundary is decided deliberately in the schema, not by accident.
 call, an API outage or an exhausted quota degrades the app to serving the last
 cached data rather than erroring. Combined with seeded injuries/stats, the app
 and the entire E2E suite run with no network at all.
+
+---
+
+## Seed strategy and how determinism was proved
+
+`seed.py` reads only from `spikes/samples/*.json`, so it runs with no network,
+no API key and no quota. Seeded state: 30 teams, 40 players, 40 stat rows,
+3 games dated today, 8 injuries, an 8-player starting roster (cap is 13, which
+leaves room for the add/remove and boundary tests).
+
+**Idempotency is verified, not assumed.** Counts matching across two runs
+proves nothing, so the check hashes every row of every table and compares
+fingerprints between consecutive runs. That check caught a real bug:
+
+> `user_roster.id` was declared `INTEGER PRIMARY KEY AUTOINCREMENT`.
+> `AUTOINCREMENT` makes SQLite record the highest id ever used in
+> `sqlite_sequence`, and `DELETE FROM` does not reset it — so roster ids
+> climbed (1–8, then 9–16, then 25–32) on every re-seed while the row *counts*
+> stayed identical. Six of seven tables hashed the same; only this one drifted.
+> Fixed by dropping `AUTOINCREMENT`: a plain `INTEGER PRIMARY KEY` restarts at
+> 1 once the table is empty, and never-reuse semantics were never needed.
+
+The lesson generalises: **a determinism claim needs a determinism test.** Any
+test that later keys off a roster row id would have failed intermittently, and
+the row counts would have said everything was fine.
+
+**Player fixtures keep their real API ids.** The seed takes 40 players straight
+from a saved `/players` page rather than inventing ids, which preserves the
+natural-key invariant — a future live refresh upserts the same rows instead of
+duplicating them.
+
+**Known data-quality caveat.** The free-tier snapshot's team assignments are
+stale or wrong in places (it lists Giannis Antetokounmpo on Miami). The seed
+uses the API's values verbatim rather than hand-correcting them: corrections
+would make the seed contradict its own source, would be overwritten by any
+future refresh, and would mean maintaining a private patch list forever.
+
+**Games are fixtures, not cached rows.** The 3 games use ids in a synthetic
+900,001+ range so they can never collide with real BALLDONTLIE game ids, and
+they are dated to the current US/Eastern date at seed time so "the dashboard
+shows tonight's games" is assertable on any day the suite runs.
 
 ---
 
