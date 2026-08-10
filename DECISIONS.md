@@ -28,7 +28,7 @@ spending quota.
 | Base URL | `https://api.balldontlie.io/nba/v1` (the bare `/v1` variant never answered) |
 | Auth | Raw key in the `Authorization` header — **no** `Bearer` prefix |
 | Rate limit | **5 requests / minute.** `x-ratelimit-limit: 5`, `retry-after: 59` on the 429 |
-| `/teams` | 200 — 45 records, unpaginated, includes defunct franchises |
+| `/teams` | 200 — 45 records, unpaginated: **30 current franchises + 15 defunct** |
 | `/players` | 200 — cursor pagination (`meta.next_cursor`); `team` is a nested object |
 | `/games` | 200 — cursor pagination; 30+ fields; `home_team`/`visitor_team` nested |
 | `/standings` | **401 — not included in the free tier** |
@@ -48,6 +48,17 @@ and `games.visitor_team` all arrive as full nested objects. Flattening a team
 name into a text column on every row would denormalize 45 teams across every
 player and turn "who plays for OKC" into a string match. Store `team_id` and
 join locally — cheap, because `/teams` is one unpaginated call cached once.
+
+**Only the 30 current teams are seeded, filtered on `division`.** `/teams`
+returns 45 records: the 30 current NBA franchises plus 15 defunct ones (Chicago
+Stags, Toronto Huskies, Sheboygan Redskins...). Two traps in that data:
+
+- On defunct records `conference` is `'    '` — four spaces, not `''`. A
+  whitespace string is truthy in Python, so `if team["conference"]` filters
+  nothing. Filter on `division` (genuinely empty) or use `.strip()`.
+- **"Denver Nuggets" appears twice**: id 8 is the current team, id 50 a defunct
+  1949–50 franchise. Any lookup by `full_name` silently returns the wrong row.
+  This is the concrete argument for keying on the API's `id`, never on a name.
 
 **Cache only the fields the product uses.** `/games` returns quarter scores,
 three overtime slots, timeouts remaining, and In-Season Tournament stage. None
