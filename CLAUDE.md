@@ -22,9 +22,19 @@ than no project at all.
    explicit approval. Never start the next phase unprompted.
 3. **Never write more than ~100 lines before stopping.**
 4. **Quiz after every phase** with exactly TWO questions. Do not proceed
-   until they are answered.
-5. **Commit after each phase** with a clear, specific message.
-6. **Never hand over code that cannot be walked through line by line.**
+   until they are answered. **Every question must be answerable from
+   material already taught in this session.** Never quiz on a concept that
+   has not been explained first — the quiz is a comprehension check, not a
+   guessing game. If a question is worth asking but the concept was not
+   covered, teach it first, in the same message, then ask.
+5. **Report the state of the system at every stop.** Give both what
+   CHANGED this phase and the CURRENT whole-repo structure — the tree,
+   what each piece does, which files are real versus placeholders, and
+   what was deliberately not built yet. A delta alone is not enough; the
+   reader must be able to maintain an accurate mental model of the whole
+   system without re-reading the repo.
+6. **Commit after each phase** with a clear, specific message.
+7. **Never hand over code that cannot be walked through line by line.**
 
 ## PROJECT CONSTRAINTS
 
