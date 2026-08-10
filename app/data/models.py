@@ -14,6 +14,17 @@ A cache refresh must never touch the app-owned tables.
 import os
 import pathlib
 import sqlite3
+from datetime import datetime, timedelta, timezone
+
+# The NBA schedules by US/Eastern date. A fixed offset is fine for the MVP:
+# DST would shift a tip-off by an hour, not across a day boundary. Both the
+# seed and the queries must agree on "today", so it is defined once, here.
+EASTERN = timezone(timedelta(hours=-5))
+
+
+def today_local():
+    """Today's date in the league's timezone, as an ISO string."""
+    return datetime.now(EASTERN).date().isoformat()
 
 DEFAULT_DB = pathlib.Path(__file__).resolve().parents[2] / "courtvision.db"
 DB_PATH = pathlib.Path(os.environ.get("COURTVISION_DB", DEFAULT_DB))

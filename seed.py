@@ -12,16 +12,10 @@ IDEMPOTENT: running this five times leaves the same state as running it once.
 
 import json
 import pathlib
-from datetime import datetime, timedelta, timezone
 
 from app.data import models
 
 SAMPLES = pathlib.Path(__file__).parent / "spikes" / "samples"
-
-# The NBA schedules by US/Eastern date. Fixed offset is fine for the MVP: the
-# seed only needs to agree with itself, and DST would shift every game by an
-# hour, not across a day boundary.
-EASTERN = timezone(timedelta(hours=-5))
 
 PLAYER_COUNT = 40
 ROSTER_SIZE = 8
@@ -75,7 +69,7 @@ def synthetic_stats(player_id):
 def seed():
     models.init_db()
     conn = models.get_connection()
-    today = datetime.now(EASTERN).date().isoformat()
+    today = models.today_local()
 
     # Children before parents: user_roster and injuries reference players,
     # players references teams. Foreign keys are ON, so the order is enforced.
