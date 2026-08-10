@@ -7,13 +7,13 @@ This is the file to re-read before an interview.
 
 ## Why a public API, not scraping
 
-<!-- TO FILL IN (Jayden) -->
+Scraping goes against many rules, public API also 
 
 ---
 
 ## Why injuries/stats are seeded at MVP
 
-<!-- TO FILL IN (Jayden) -->
+They are viable for the MVP and adds features that make it stand out.
 
 ---
 
