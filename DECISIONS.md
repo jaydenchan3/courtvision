@@ -7,13 +7,73 @@ This is the file to re-read before an interview.
 
 ## Why a public API, not scraping
 
-Scraping goes against many rules, public API also 
+**Chosen:** pull NBA data from the public BALLDONTLIE API.
+**Rejected:** logging into ESPN/Yahoo Fantasy with Selenium and scraping my own
+roster, which was the original idea for this project.
+
+Three reasons.
+
+1. **Terms of service.** ESPN and Yahoo both prohibit automated access to
+   logged-in pages. Building a portfolio project on a documented ToS violation
+   is indefensible on a public repo with my name on it.
+
+2. **Fragility.** A scraper is coupled to someone else's HTML. Any redesign —
+   which I don't control and get no warning about — breaks it silently. A
+   versioned JSON API is a contract; a rendered page is not. Maintaining a
+   scraper is unpaid work that would have consumed the time meant for the test
+   suite, which is the actual point of this project.
+
+3. **How it reads in an interview.** "I automated a site that forbids
+   automation" invites doubt about my judgment. "I used the documented public
+   API" invites no questions at all.
+
+**The reframe that matters:** dropping the scraper costs no Selenium practice.
+Every skill worth demonstrating — login flows, explicit waits, dynamic content,
+tables, forms, the Page Object Model — is exercised against my own app instead.
+That is also how Selenium is used professionally: as the end-to-end test layer
+for your own product, not as an acquisition tool for someone else's data.
+
+The personal-roster feature survives intact — the user enters their own players
+manually, so nothing needs to touch anyone's fantasy account.
 
 ---
 
 ## Why injuries/stats are seeded at MVP
 
-They are viable for the MVP and adds features that make it stand out.
+**Chosen:** injuries and per-player stats are fixed fixtures written by
+`seed.py`. **Rejected:** fetching either one live.
+
+1. **Determinism — the main reason.** End-to-end tests assert on what the user
+   sees, so the data behind the screen has to be stable. A test asserting "the
+   injury widget shows 3 players out" only means something if that number
+   cannot change on its own. Live injury status changes hourly; a player is
+   cleared to play and a green suite goes red without a line of code changing.
+   That is a flaky failure, and flaky failures train a team to re-run instead
+   of investigate, at which point the suite stops being a gate. Seeded data
+   makes every assertion reproducible on any machine, on any day.
+
+2. **The measured request budget makes it infeasible anyway.** The free tier
+   allows 5 requests per minute (see the spike findings below). Assembling
+   season averages for ~40 players would take dozens of calls and many minutes
+   just to populate one page. The three endpoints verified as available —
+   teams, players, games — carry no injury data at all, and `/standings`
+   returning 401 already proved the free tier gates endpoints.
+
+3. **A derived trend would move under the tests.** "Trending up" computed from
+   recent games changes as games are played. Storing `trend` as a fixed value
+   means the dashboard can render it and a test can assert on it.
+
+4. **It keeps the whole suite offline.** No API key in CI, no quota, no 429, no
+   network flake. The tests exercise the app, not the internet.
+
+**Honest tradeoff:** at MVP the injury and trend data is realistic but not
+real, so the app is a working demo of the interface rather than a live tool.
+The upgrade path is narrow: swap the seeded source for a real feed and cache it
+in the same tables, exactly like teams/players/games. Nothing above the data
+layer changes, because Flask only ever reads SQLite.
+
+This is also what makes the dashboard's headline features — who is out tonight,
+who is trending — possible at all without a paid tier.
 
 ---
 
