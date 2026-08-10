@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}CourtVision{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="{{ url_for('main.dashboard') }}">CourtVision</a>
+    {% if session.get('user') %}
+      {# data-testid, not a CSS class: this attribute exists for the test suite
+         and is not touched by restyling. #}
+      <nav data-testid="main-nav">
+        <a href="{{ url_for('main.dashboard') }}" data-testid="nav-dashboard">Dashboard</a>
+        <a href="{{ url_for('main.roster_view') }}" data-testid="nav-roster">Roster</a>
+        <a href="{{ url_for('main.waiver') }}" data-testid="nav-waiver">Waiver</a>
+        <a href="{{ url_for('main.search') }}" data-testid="nav-search">Search</a>
+      </nav>
+      <form method="post" action="{{ url_for('main.logout') }}" class="logout-form">
+        <button type="submit" id="logout-button">Log out</button>
+      </form>
+    {% endif %}
+  </header>
+
+  <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class="flashes" data-testid="flash-messages">
+          {% for category, message in messages %}
+            <li class="flash flash-{{ category }}" data-testid="flash-{{ category }}">{{ message }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

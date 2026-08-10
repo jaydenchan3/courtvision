@@ -1,0 +1,85 @@
+/* Deliberately small. The app exists to be tested, not to win a design award.
+   Note that no test locator depends on any class in this file. */
+
+:root {
+  --ink: #16181d;
+  --muted: #6b7280;
+  --line: #e3e6ea;
+  --accent: #c8452d;
+  --bad: #b42318;
+  --ok: #067647;
+  --bg: #f7f8fa;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.85rem 1.5rem;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand { font-weight: 700; color: var(--accent); text-decoration: none; }
+.site-header nav { display: flex; gap: 1.1rem; }
+.site-header nav a { color: var(--muted); text-decoration: none; }
+.site-header nav a:hover { color: var(--ink); }
+.logout-form { margin-left: auto; }
+
+main { max-width: 60rem; margin: 0 auto; padding: 1.75rem 1.5rem; }
+
+h1 { font-size: 1.4rem; margin: 0 0 1rem; }
+
+.card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.card-narrow { max-width: 24rem; margin-inline: auto; }
+
+label { display: block; margin: 0.85rem 0 0.25rem; font-weight: 600; font-size: 0.9rem; }
+
+input[type="text"], input[type="password"], input[type="search"], select {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font: inherit;
+}
+
+button {
+  margin-top: 1rem;
+  padding: 0.5rem 0.9rem;
+  border: 0;
+  border-radius: 5px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+button:hover { filter: brightness(0.93); }
+
+.error { color: var(--bad); font-weight: 600; }
+.hint { color: var(--muted); font-size: 0.85rem; margin-top: 1.25rem; }
+
+.flashes { list-style: none; padding: 0; margin: 0 0 1.25rem; }
+.flash {
+  padding: 0.6rem 0.8rem;
+  border-radius: 5px;
+  margin-bottom: 0.5rem;
+  background: #fff;
+  border-left: 4px solid var(--muted);
+}
+.flash-error { border-left-color: var(--bad); color: var(--bad); }
+.flash-success { border-left-color: var(--ok); color: var(--ok); }

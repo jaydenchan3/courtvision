@@ -7,7 +7,8 @@ handling and error mapping below stay as they are.
 No SQL lives here -- every query goes through app.data.queries.
 """
 
-from flask import Blueprint, current_app, jsonify, redirect, request, session, url_for
+from flask import (Blueprint, current_app, jsonify, redirect, render_template,
+                   request, session, url_for)
 
 from app import get_db, login_required
 from app.data import models, queries
@@ -22,6 +23,21 @@ MSG_UNKNOWN = "No such player."
 MSG_NOT_ROSTERED = "That player is not on your roster."
 # Distinct from MSG_UNKNOWN: the input was malformed, not merely absent.
 MSG_INVALID = "Invalid player selection."
+MSG_BAD_LOGIN = "Invalid username or password."
+
+
+def safe_next(target):
+    """Only allow same-site relative redirects.
+
+    Without this check, /login?next=https://evil.example lets an attacker send
+    someone a link to OUR login page that bounces them somewhere else after a
+    successful sign-in -- an open redirect, and a convincing phishing step.
+    A leading '//' is rejected too: //evil.example is protocol-relative and
+    the browser reads it as another host.
+    """
+    if target and target.startswith("/") and not target.startswith("//"):
+        return target
+    return None
 
 
 def rows(records):
@@ -46,28 +62,35 @@ def healthz():
 
 @bp.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == "GET":
-        return jsonify(logged_in=bool(session.get("user")))
+    next_url = safe_next(request.values.get("next"))
 
-    payload = request.form if request.form else (request.get_json(silent=True) or {})
-    username = (payload.get("username") or "").strip()
-    password = payload.get("password") or ""
+    if request.method == "GET":
+        if session.get("user"):
+            return redirect(next_url or url_for("main.dashboard"))
+        return render_template("login.html", next_url=next_url)
+
+    username = (request.form.get("username") or "").strip()
+    password = request.form.get("password") or ""
 
     if (username == current_app.config["DEMO_USER"]
             and password == current_app.config["DEMO_PASSWORD"]):
+        # Clearing first prevents session fixation: a pre-existing session id
+        # supplied by an attacker must not survive into the authenticated one.
         session.clear()
         session["user"] = username
-        return jsonify(ok=True, user=username)
+        return redirect(next_url or url_for("main.dashboard"))
 
-    # Deliberately vague: saying which field was wrong tells an attacker
-    # whether a username exists.
-    return jsonify(ok=False, error="Invalid username or password"), 401
+    # Deliberately vague: naming the wrong field tells an attacker whether a
+    # username exists. 401 keeps the URL unchanged, which the failed-login test
+    # asserts on -- the user must stay on /login, not be navigated anywhere.
+    return render_template("login.html", error=MSG_BAD_LOGIN,
+                           username=username, next_url=next_url), 401
 
 
 @bp.post("/logout")
 def logout():
     session.clear()
-    return jsonify(ok=True)
+    return redirect(url_for("main.login"))
 
 
 @bp.get("/")
