@@ -1,27 +1,31 @@
-﻿"""HTTP routes.
+"""HTTP routes.
 
-Phase 1 returns JSON so the backend can be verified before any HTML exists.
-Phase 2 swaps the response layer for render_template; the auth, parameter
-handling and error mapping below stay as they are.
+The dashboard is deliberately NOT server-rendered: it serves a shell and
+fetches /api/dashboard after load, behind an artificial delay. Content that
+appears asynchronously is what makes explicit waits necessary, and that page
+is the basis of the wait tests. Roster, waiver and search are ordinary
+server-rendered form flows, so the suite covers both styles.
 
 No SQL lives here -- every query goes through app.data.queries.
 """
 
-from flask import (Blueprint, current_app, jsonify, redirect, render_template,
-                   request, session, url_for)
+import time
+
+from flask import (Blueprint, current_app, flash, jsonify, redirect,
+                   render_template, request, session, url_for)
 
 from app import get_db, login_required
 from app.data import models, queries
 
 bp = Blueprint("main", __name__)
 
-# Defined once because Phase 2 renders these and Phase 6 asserts on them. Two
-# copies of the same sentence drift apart and the test stops meaning anything.
+# Defined once because the templates render these and the tests import them.
+# Two copies of the same sentence drift apart and the assertion stops meaning
+# anything.
 MSG_ROSTER_FULL = f"Roster is full ({models.ROSTER_MAX} players maximum)."
 MSG_DUPLICATE = "That player is already on your roster."
 MSG_UNKNOWN = "No such player."
 MSG_NOT_ROSTERED = "That player is not on your roster."
-# Distinct from MSG_UNKNOWN: the input was malformed, not merely absent.
 MSG_INVALID = "Invalid player selection."
 MSG_BAD_LOGIN = "Invalid username or password."
 
@@ -29,11 +33,8 @@ MSG_BAD_LOGIN = "Invalid username or password."
 def safe_next(target):
     """Only allow same-site relative redirects.
 
-    Without this check, /login?next=https://evil.example lets an attacker send
-    someone a link to OUR login page that bounces them somewhere else after a
-    successful sign-in -- an open redirect, and a convincing phishing step.
-    A leading '//' is rejected too: //evil.example is protocol-relative and
-    the browser reads it as another host.
+    Without this, /login?next=https://evil.example turns our own login page
+    into a phishing hop. A protocol-relative //host is rejected too.
     """
     if target and target.startswith("/") and not target.startswith("//"):
         return target
@@ -56,7 +57,8 @@ def player_id_from_request():
 
 @bp.get("/healthz")
 def healthz():
-    """Liveness only. Phase 8 CI polls a readiness endpoint instead of sleeping."""
+    """Readiness probe. CI and the live-server fixture poll this instead of
+    sleeping for an arbitrary number of seconds."""
     return jsonify(status="ok")
 
 
@@ -74,15 +76,13 @@ def login():
 
     if (username == current_app.config["DEMO_USER"]
             and password == current_app.config["DEMO_PASSWORD"]):
-        # Clearing first prevents session fixation: a pre-existing session id
-        # supplied by an attacker must not survive into the authenticated one.
+        # Clearing first prevents session fixation.
         session.clear()
         session["user"] = username
         return redirect(next_url or url_for("main.dashboard"))
 
-    # Deliberately vague: naming the wrong field tells an attacker whether a
-    # username exists. 401 keeps the URL unchanged, which the failed-login test
-    # asserts on -- the user must stay on /login, not be navigated anywhere.
+    # 401 and re-render in place: the URL must not change, which is what the
+    # failed-login test asserts on.
     return render_template("login.html", error=MSG_BAD_LOGIN,
                            username=username, next_url=next_url), 401
 
@@ -96,14 +96,26 @@ def logout():
 @bp.get("/")
 @login_required
 def dashboard():
+    """Shell only. The data arrives via fetch from /api/dashboard."""
+    return render_template("dashboard.html", date_param=request.args.get("date", ""))
+
+
+@bp.get("/api/dashboard")
+@login_required
+def api_dashboard():
+    # Deliberate delay so the spinner is genuinely observable. Without it the
+    # fetch resolves too fast to teach anything, and a sloppy test would pass
+    # by luck rather than because it waits correctly.
+    time.sleep(current_app.config["DASHBOARD_DELAY_MS"] / 1000)
+
     db = get_db()
-    today = models.today_local()
-    games = queries.games_tonight(db, today)
+    # An explicit ?date= makes a zero-games state reachable deterministically,
+    # which is how the empty-state test avoids depending on the calendar.
+    date = request.args.get("date") or models.today_local()
+    games = queries.games_tonight(db, date)
     return jsonify(
-        date=today,
+        date=date,
         games=rows(games),
-        # An empty list is a real answer ("no games tonight"), which the UI must
-        # render differently from "we have not checked". Phase 2 uses this flag.
         no_games=not games,
         injuries=rows(queries.injury_report(db)),
         roster_count=queries.roster_count(db),
@@ -114,8 +126,10 @@ def dashboard():
 @login_required
 def roster_view():
     db = get_db()
-    return jsonify(
+    return render_template(
+        "roster.html",
         players=rows(queries.roster(db)),
+        available=rows(queries.waiver_players(db, sort="name")),
         count=queries.roster_count(db),
         max=models.ROSTER_MAX,
     )
@@ -124,24 +138,24 @@ def roster_view():
 @bp.post("/roster/add")
 @login_required
 def roster_add():
-    """Translates the data layer's domain errors into HTTP responses.
-
-    The data layer decides that something is invalid; the route decides how to
-    say so. Keeping that split is what lets Phase 6 test the rules directly and
-    the messages through the browser.
-    """
+    """The data layer decides that something is invalid; the route decides how
+    to say so. That split lets the rules be tested directly and the messages
+    through the browser."""
     player_id = player_id_from_request()
     if player_id is None:
-        return jsonify(ok=False, error=MSG_INVALID), 400
+        flash(MSG_INVALID, "error")
+        return redirect(url_for("main.roster_view"))
     try:
         queries.add_to_roster(get_db(), player_id)
     except queries.RosterFull:
-        return jsonify(ok=False, error=MSG_ROSTER_FULL), 409
+        flash(MSG_ROSTER_FULL, "error")
     except queries.DuplicatePlayer:
-        return jsonify(ok=False, error=MSG_DUPLICATE), 409
+        flash(MSG_DUPLICATE, "error")
     except queries.UnknownPlayer:
-        return jsonify(ok=False, error=MSG_UNKNOWN), 404
-    return jsonify(ok=True, player_id=player_id), 201
+        flash(MSG_UNKNOWN, "error")
+    else:
+        flash("Player added to your roster.", "success")
+    return redirect(url_for("main.roster_view"))
 
 
 @bp.post("/roster/remove")
@@ -149,43 +163,38 @@ def roster_add():
 def roster_remove():
     player_id = player_id_from_request()
     if player_id is None:
-        return jsonify(ok=False, error=MSG_INVALID), 400
-    if not queries.remove_from_roster(get_db(), player_id):
-        return jsonify(ok=False, error=MSG_NOT_ROSTERED), 404
-    return jsonify(ok=True, player_id=player_id)
+        flash(MSG_INVALID, "error")
+    elif not queries.remove_from_roster(get_db(), player_id):
+        flash(MSG_NOT_ROSTERED, "error")
+    else:
+        flash("Player removed from your roster.", "success")
+    return redirect(url_for("main.roster_view"))
 
 
 @bp.get("/waiver")
 @login_required
 def waiver():
-    """An unknown sort key falls back to the default rather than erroring.
-
-    A column name cannot be parameterised, so queries.SORTABLE whitelists the
-    permitted values; anything else simply misses and never becomes SQL.
-    """
-    sort = request.args.get("sort", queries.DEFAULT_SORT)
+    """An unknown sort key falls back to the default rather than erroring: a
+    column name cannot be parameterised, so queries.SORTABLE whitelists the
+    permitted values and anything else never becomes SQL."""
+    db = get_db()
+    requested = request.args.get("sort", queries.DEFAULT_SORT)
+    sort = requested if requested in queries.SORTABLE else queries.DEFAULT_SORT
     team = (request.args.get("team") or "").strip() or None
-    players = queries.waiver_players(get_db(), sort=sort, team=team)
-    return jsonify(
-        players=rows(players),
-        sort=sort if sort in queries.SORTABLE else queries.DEFAULT_SORT,
-        team=team,
-        sortable=sorted(queries.SORTABLE),
-        empty=not players,
-    )
+    players = rows(queries.waiver_players(db, sort=requested, team=team))
+    teams = [r[0] for r in db.execute(
+        "SELECT DISTINCT abbreviation FROM teams ORDER BY abbreviation")]
+    return render_template("waiver.html", players=players, sort=sort, team=team,
+                           sortable=sorted(queries.SORTABLE), teams=teams)
 
 
 @bp.get("/search")
 @login_required
 def search():
-    """A blank query is not an error and not 'everything' -- it is no results."""
+    """A blank query is not an error and not 'everything' -- it is the
+    not-yet-searched state, which the page renders distinctly from a search
+    that found nothing."""
     term = (request.args.get("q") or "").strip()
-    results = queries.search_players(get_db(), term)
-    return jsonify(
-        query=term,
-        results=rows(results),
-        # Distinguishes "searched and found nothing" from "have not searched",
-        # which the Phase 2 empty state renders differently.
-        searched=bool(term),
-        empty=bool(term) and not results,
-    )
+    results = rows(queries.search_players(get_db(), term))
+    return render_template("search.html", query=term, results=results,
+                           searched=bool(term), empty=bool(term) and not results)

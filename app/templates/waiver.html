@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Waiver wire — CourtVision{% endblock %}
+
+{% block content %}
+<h1>Waiver wire</h1>
+
+<section class="card">
+  <form method="get" action="{{ url_for('main.waiver') }}" id="waiver-filter-form">
+    <label for="waiver-sort">Sort by</label>
+    <select id="waiver-sort" name="sort" data-testid="waiver-sort">
+      {% for key in sortable %}
+        <option value="{{ key }}" {% if key == sort %}selected{% endif %}>{{ key }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="waiver-team">Team</label>
+    <select id="waiver-team" name="team" data-testid="waiver-team">
+      <option value="">All teams</option>
+      {% for t in teams %}
+        <option value="{{ t }}" {% if t == team %}selected{% endif %}>{{ t }}</option>
+      {% endfor %}
+    </select>
+
+    <button type="submit" id="waiver-apply">Apply</button>
+  </form>
+</section>
+
+<section class="card">
+  {% if players %}
+  <table data-testid="waiver-table">
+    <thead>
+      <tr><th>Player</th><th>Team</th><th>PPG</th><th>RPG</th><th>APG</th><th>Trend</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for p in players %}
+      <tr data-testid="waiver-row" data-id="{{ p.id }}">
+        <td data-testid="waiver-player-name">{{ p.first_name }} {{ p.last_name }}</td>
+        <td data-testid="waiver-team-cell">{{ p.team }}</td>
+        <td data-testid="waiver-points">{{ p.points_pg }}</td>
+        <td>{{ p.rebounds_pg }}</td>
+        <td>{{ p.assists_pg }}</td>
+        <td>{{ p.trend }}</td>
+        <td>{{ p.injury_status or 'Active' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty" data-testid="waiver-empty">No available players match that filter.</p>
+  {% endif %}
+</section>
+{% endblock %}

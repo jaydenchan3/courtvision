@@ -83,3 +83,31 @@ button:hover { filter: brightness(0.93); }
 }
 .flash-error { border-left-color: var(--bad); color: var(--bad); }
 .flash-success { border-left-color: var(--ok); color: var(--ok); }
+
+/* Dashboard async-load states */
+.loading { display: flex; align-items: center; gap: 0.6rem; color: var(--muted); padding: 1.5rem 0; }
+.spinner {
+  width: 1.1rem; height: 1.1rem; border-radius: 50%;
+  border: 3px solid var(--line); border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.empty { color: var(--muted); font-style: italic; }
+.games, .injuries { list-style: none; padding: 0; margin: 0; }
+.games li, .injuries li { padding: 0.4rem 0; border-bottom: 1px solid var(--line); }
+.games li:last-child, .injuries li:last-child { border-bottom: 0; }
+
+h2 { font-size: 1rem; margin: 0 0 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 0.5rem 0.4rem; border-bottom: 1px solid var(--line); }
+th { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; }
+tbody tr:last-child td { border-bottom: 0; }
+td button { margin-top: 0; padding: 0.3rem 0.6rem; font-size: 0.85rem; }
+
+#waiver-filter-form, #search-form, #add-player-form { display: flex; align-items: flex-end; gap: 0.75rem; flex-wrap: wrap; }
+#waiver-filter-form label, #search-form label, #add-player-form label { margin: 0; }
+#waiver-filter-form select, #add-player-form select { width: auto; min-width: 9rem; }
+#search-form input { width: auto; min-width: 16rem; }
+#waiver-filter-form button, #search-form button, #add-player-form button { margin-top: 0; }

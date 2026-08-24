@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Player search — CourtVision{% endblock %}
+
+{% block content %}
+<h1>Player search</h1>
+
+<section class="card">
+  <form method="get" action="{{ url_for('main.search') }}" id="search-form">
+    <label for="search-input">Player name</label>
+    <input type="search" id="search-input" name="q" value="{{ query }}"
+           data-testid="search-input" placeholder="e.g. Allen">
+    <button type="submit" id="search-submit">Search</button>
+  </form>
+</section>
+
+<section class="card" data-testid="search-results">
+  {# Three distinct states, never collapsed into one. "Has not searched" is not
+     the same as "searched and found nothing", and the tests assert on both. #}
+  {% if not searched %}
+    <p class="empty" data-testid="search-prompt">Search for a player to add to your roster.</p>
+  {% elif empty %}
+    <p class="empty" data-testid="search-empty">No players found matching &ldquo;{{ query }}&rdquo;.</p>
+  {% else %}
+    <table data-testid="search-table">
+      <thead><tr><th>Player</th><th>Team</th><th>Pos</th><th>PPG</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for p in results %}
+        <tr data-testid="search-row" data-id="{{ p.id }}">
+          <td data-testid="search-player-name">{{ p.first_name }} {{ p.last_name }}</td>
+          <td>{{ p.team }}</td>
+          <td>{{ p.position or '-' }}</td>
+          <td>{{ p.points_pg }}</td>
+          <td>{{ p.injury_status or 'Active' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</section>
+{% endblock %}

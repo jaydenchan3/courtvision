@@ -58,6 +58,9 @@ def create_app(config=None):
         # Single-user by design: multi-user auth is an explicit scope guard.
         DEMO_USER=os.environ.get("COURTVISION_USER", "demo"),
         DEMO_PASSWORD=os.environ.get("COURTVISION_PASSWORD", "courtvision"),
+        # Deliberate delay on the dashboard data fetch. This is what makes
+        # the spinner observable and explicit waits necessary.
+        DASHBOARD_DELAY_MS=int(os.environ.get("DASHBOARD_DELAY_MS", "400")),
     )
     if config:
         app.config.update(config)

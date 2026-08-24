@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — CourtVision{% endblock %}
+
+{% block content %}
+{# The data attribute carries the optional ?date= through to the fetch, which
+   is how a test reaches a deterministic zero-games state. #}
+<section id="dashboard" data-date="{{ date_param }}">
+
+  {# Present on first paint; removed once the fetch resolves. This is the
+     element the explicit-wait tests wait to become invisible. #}
+  <div id="dashboard-loading" data-testid="dashboard-loading" class="loading">
+    <span class="spinner" aria-hidden="true"></span>
+    <span>Loading tonight&rsquo;s games&hellip;</span>
+  </div>
+
+  <div id="dashboard-content" data-testid="dashboard-content" hidden>
+    <h1>Tonight <span data-testid="dashboard-date"></span></h1>
+
+    <div class="card">
+      <h2>Games</h2>
+      <ul class="games" data-testid="games-list"></ul>
+      <p class="empty" data-testid="no-games" hidden>No games scheduled tonight</p>
+    </div>
+
+    <div class="card">
+      <h2>Injury report</h2>
+      <ul class="injuries" data-testid="injury-list"></ul>
+      <p class="empty" data-testid="no-injuries" hidden>No reported injuries</p>
+    </div>
+
+    <p class="hint">
+      Roster: <span data-testid="dashboard-roster-count"></span> players
+    </p>
+  </div>
+
+  <p class="error" data-testid="dashboard-error" hidden>
+    Could not load dashboard data.
+  </p>
+</section>
+
+<script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Roster — CourtVision{% endblock %}
+
+{% block content %}
+<h1>My roster
+  <span data-testid="roster-count">{{ count }}</span> /
+  <span data-testid="roster-max">{{ max }}</span>
+</h1>
+
+<section class="card">
+  <form method="post" action="{{ url_for('main.roster_add') }}" id="add-player-form">
+    <label for="add-player-select">Add a player</label>
+    <select id="add-player-select" name="player_id" data-testid="add-player-select">
+      {% for p in available %}
+        <option value="{{ p.id }}">{{ p.first_name }} {{ p.last_name }} ({{ p.team }})</option>
+      {% endfor %}
+    </select>
+    <button type="submit" id="add-player-submit">Add to roster</button>
+  </form>
+</section>
+
+<section class="card">
+  {% if players %}
+  <table data-testid="roster-table">
+    <thead>
+      <tr><th>Player</th><th>Team</th><th>Pos</th><th>PPG</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for p in players %}
+      {# data-id is the stable per-row hook. Tests locate a row by player id,
+         never by position in the table, which changes as rows are added. #}
+      <tr data-testid="roster-row" data-id="{{ p.id }}">
+        <td data-testid="roster-player-name">{{ p.first_name }} {{ p.last_name }}</td>
+        <td>{{ p.team }}</td>
+        <td>{{ p.position or '-' }}</td>
+        <td>{{ p.points_pg }}</td>
+        <td data-testid="roster-injury">{{ p.injury_status or 'Active' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('main.roster_remove') }}">
+            <input type="hidden" name="player_id" value="{{ p.id }}">
+            <button type="submit" data-testid="remove-player" data-id="{{ p.id }}">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty" data-testid="roster-empty">Your roster is empty.</p>
+  {% endif %}
+</section>
+{% endblock %}
