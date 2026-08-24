@@ -7,7 +7,7 @@ from tests.pages.dashboard_page import DashboardPage
 from tests.pages.login_page import LoginPage
 from tests.pages.roster_page import RosterPage
 
-pytestmark = pytest.mark.auth
+pytestmark = [pytest.mark.e2e, pytest.mark.auth]
 
 
 def test_valid_login_reaches_dashboard(driver, live_server):

@@ -18,17 +18,25 @@ class LoginPage(BasePage):
         return self
 
     def sign_in(self, username, password):
-        """Submits and waits for the resulting navigation to settle.
+        """Submits and waits for one of the two possible OUTCOMES.
 
-        Waiting on the old form going stale is what stops the next query from
-        reading the pre-submit DOM -- the classic source of a test that passes
-        locally and fails on a slower machine.
+        Success navigates away from /login; failure re-renders in place with an
+        error. Waiting on either is deterministic.
+
+        An earlier version waited on staleness_of(form) instead. That waits on
+        a DOM-identity side effect rather than the result, and it timed out
+        intermittently -- roughly one full-suite run in ten -- when the click
+        and the document swap interleaved badly, even though the login had
+        actually succeeded. Waiting on the outcome removes the race.
         """
-        form = self.driver.find_element(*self.FORM)
+        before = self.driver.current_url
         self.type_into(self.USERNAME, username)
         self.type_into(self.PASSWORD, password)
         self.click(self.SUBMIT)
-        self.wait_stale(form)
+        self.wait.until(
+            lambda d: d.current_url != before or d.find_elements(*self.ERROR),
+            "login neither navigated away nor reported an error",
+        )
         return self
 
     def error_text(self):

@@ -244,3 +244,68 @@ test nobody trusts.
 with `name.split()[-1]`, which returns `"III"` for "Marvin Bagley III". The app
 was correct and the test was wrong. Verifying the failure rather than assuming
 the app had broken is what separated the two.
+
+---
+
+## Three test layers, and why the pyramid is shaped this way
+
+94 tests in three layers, each separately runnable:
+
+| Layer | Count | Runtime | Scope |
+| --- | --- | --- | --- |
+| `unit` | 25 | **0.47 s** | One `queries.py` function, no HTTP, no browser |
+| `integration` | 40 | 0.82 s | App, database and routing via Flask's test client |
+| `e2e` | 29 | 31 s | A real headless browser against a real HTTP server |
+
+`pytest -m unit` · `pytest -m integration` · `pytest -m e2e` · `pytest` runs all
+three. No test is left unmarked, so a layer filter can never silently skip
+anything — verified with `pytest -m "not unit and not integration and not e2e"`
+collecting zero tests.
+
+**Why not test everything end to end.** E2E is ~65× slower per test here and is
+the only layer that can fail for reasons unrelated to the code — browser
+startup, driver quirks, timing. Every one of those failures costs
+investigation. So the rule is: prove it at the cheapest layer that can prove
+it, and reserve the browser for what genuinely needs one — explicit waits, the
+async dashboard, rendered rows, real navigation. Status codes, message
+constants, SQL behaviour and the sort whitelist are all proved without a
+browser and deliberately not re-proved with one.
+
+**Fixtures compose rather than duplicate.** `seeded_db` (temp database + seed)
+is the base; `client` builds the Flask test client on it; `live_server` and
+`driver` build the browser stack on the same temp-database setup. One
+definition of "a known starting state", shared by all three layers.
+
+**The integration client zeroes `DASHBOARD_DELAY_MS`.** The 400 ms delay exists
+to make the spinner observable in a browser; paying it on every integration
+test would buy nothing. The delay is covered at the E2E layer, where it is the
+whole point.
+
+### A flake the new layers exposed, and its fix
+
+Adding the fast layers made a latent E2E flake reproducible: the full suite
+failed roughly one run in ten, at a different test each time, while
+`pytest -m e2e` alone passed repeatedly.
+
+The cause was in `LoginPage.sign_in`, which waited on
+`EC.staleness_of(form)` — a **DOM-identity side effect** rather than the
+outcome. When the click and the document swap interleaved badly the old element
+never registered as stale and the wait timed out, even though the login had
+succeeded. It now waits on the two outcomes that can actually occur: the URL
+changing, or the error element appearing. Six consecutive full-suite runs
+green afterwards.
+
+Two things worth keeping from that: **wait on the result you care about, not on
+an artefact of how the browser got there**, and a flake that only appears in the
+full suite is usually about shared state or timing between tests, not about the
+test that happens to fail.
+
+### One expectation that was wrong, and was not "fixed" in the app
+
+The first draft of the roster integration tests asserted `201/400/404/409` JSON
+responses. Those were the Phase 1c API contract; the roster routes became
+Post/Redirect/Get when the HTML form landed, so they now return 302 and report
+the outcome through a flash. PRG is correct for a form — it stops a browser
+refresh from re-submitting the add — so **the tests were changed, not the
+route**. Same discipline as the earlier `split()[-1]` surname bug: when a new
+test fails, the app is not automatically the thing that is wrong.

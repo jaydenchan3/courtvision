@@ -11,7 +11,7 @@ from app.data import models
 from app.server import MSG_DUPLICATE, MSG_ROSTER_FULL
 from tests.pages.roster_page import RosterPage
 
-pytestmark = pytest.mark.roster
+pytestmark = [pytest.mark.e2e, pytest.mark.roster]
 
 
 def test_seeded_roster_renders(driver, live_server, logged_in):

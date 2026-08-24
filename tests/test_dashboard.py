@@ -9,7 +9,7 @@ import pytest
 
 from tests.pages.dashboard_page import DashboardPage
 
-pytestmark = pytest.mark.dashboard
+pytestmark = [pytest.mark.e2e, pytest.mark.dashboard]
 
 
 def test_spinner_shows_then_content_replaces_it(driver, live_server, logged_in):

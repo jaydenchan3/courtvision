@@ -4,7 +4,7 @@ import pytest
 
 from tests.pages.search_page import SearchPage
 
-pytestmark = pytest.mark.search
+pytestmark = [pytest.mark.e2e, pytest.mark.search]
 
 
 def test_initial_state_prompts_rather_than_reporting_no_results(driver, live_server, logged_in):

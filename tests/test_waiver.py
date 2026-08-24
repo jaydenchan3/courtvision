@@ -4,7 +4,7 @@ import pytest
 
 from tests.pages.waiver_page import WaiverPage
 
-pytestmark = pytest.mark.waiver
+pytestmark = [pytest.mark.e2e, pytest.mark.waiver]
 
 # Generational suffixes are not surnames: "Marvin Bagley III".split()[-1] is
 # "III". The app sorts on the last_name column, so the test needs the same
