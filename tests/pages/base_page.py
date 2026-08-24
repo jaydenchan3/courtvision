@@ -9,7 +9,7 @@ Page objects hold LOCATORS and ACTIONS. They do not assert. Tests call these
 methods and make the assertions themselves.
 """
 
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
@@ -60,10 +60,50 @@ class BasePage:
     def wait_url_contains(self, fragment):
         return self.wait.until(EC.url_contains(fragment))
 
-    def wait_stale(self, element):
-        """Used after a form post: waits for the old DOM to be replaced, so a
-        query never reads the pre-navigation page."""
-        return self.wait.until(EC.staleness_of(element))
+    # Marker on `window`, not on any element. A new document gets a fresh
+    # window object, so the marker vanishing means the navigation landed.
+    _NAV_MARKER = "__cvNav"
+
+    def wait_until(self, predicate, message=""):
+        """Poll a predicate, treating a mid-navigation DOM as 'not yet'.
+
+        While a document is being swapped, Chrome can raise from almost any
+        driver call. Inside a poll that means 'ask again', not 'fail', so the
+        predicate is guarded and the wait still times out with a message if the
+        condition never becomes true.
+        """
+        def guarded(driver):
+            try:
+                return predicate(driver)
+            except WebDriverException:
+                return False
+        return self.wait.until(guarded, message)
+
+    def submit_and_wait(self, click_locator, ready_locator=None):
+        """Click something that navigates, then wait for the NEW document.
+
+        This deliberately does NOT use EC.staleness_of. staleness_of treats
+        only StaleElementReferenceException as success, but Chrome can instead
+        raise a generic WebDriverException while the document is being replaced
+        ("Node with given id does not belong to the document"). That escapes
+        the wait entirely and fails the test outright rather than retrying --
+        which is exactly how this suite failed in CI under random ordering.
+
+        Waiting on a window-scoped marker keys on document identity instead, so
+        no element reference is involved and there is nothing to go stale. If
+        the click does not navigate at all, this times out with a clear message
+        rather than hanging on an element that will never go stale.
+        """
+        self.driver.execute_script(f"window.{self._NAV_MARKER} = 1;")
+        self.click(click_locator)
+        self.wait_until(
+            lambda d: d.execute_script(
+                f"return window.{self._NAV_MARKER} === undefined;"),
+            "navigation did not complete after submit",
+        )
+        if ready_locator is not None:
+            self.wait_visible(ready_locator)
+        return self
 
     # -- queries ---------------------------------------------------------
     def find(self, locator):

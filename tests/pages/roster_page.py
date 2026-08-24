@@ -43,21 +43,38 @@ class RosterPage(BasePage):
         return [o.get_attribute("value") for o in options]
 
     def add_player(self, player_id):
-        """Selects, submits, and waits for the reloaded page before returning."""
-        table_or_empty = self.driver.find_element(By.TAG_NAME, "body")
+        """Selects, submits, and waits for the outcome: the row is on the page.
+
+        Waiting for the specific row rather than merely for a reload means a
+        successful add is distinguishable from a rejected one, and the wait
+        cannot pass against the pre-submit table.
+        """
         self.select_option(self.ADD_SELECT, str(player_id))
-        self.click(self.ADD_SUBMIT)
-        self.wait_stale(table_or_empty)
-        self.wait_visible(self.COUNT)
+        self.submit_and_wait(self.ADD_SUBMIT, self.COUNT)
+        self.wait_until(
+            lambda d: d.find_elements(*self._row_for(player_id))
+            or d.find_elements(*self.FLASH_ERROR),
+            f"player {player_id} neither appeared on the roster nor was refused",
+        )
         return self
 
     def remove_player(self, player_id):
-        body = self.driver.find_element(By.TAG_NAME, "body")
-        self.click((By.CSS_SELECTOR,
-                    f'[data-testid="remove-player"][data-id="{player_id}"]'))
-        self.wait_stale(body)
-        self.wait_visible(self.COUNT)
+        """Submits, then waits for the row to be GONE -- the actual outcome."""
+        self.submit_and_wait(self._remove_button(player_id), self.COUNT)
+        self.wait_until(
+            lambda d: not d.find_elements(*self._row_for(player_id)),
+            f"player {player_id} was still on the roster after removal",
+        )
         return self
+
+    @staticmethod
+    def _row_for(player_id):
+        return (By.CSS_SELECTOR, f'[data-testid="roster-row"][data-id="{player_id}"]')
+
+    @staticmethod
+    def _remove_button(player_id):
+        return (By.CSS_SELECTOR,
+                f'[data-testid="remove-player"][data-id="{player_id}"]')
 
     def fill_to_capacity(self):
         """Adds available players until the roster is at its cap."""

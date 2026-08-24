@@ -37,12 +37,22 @@ class WaiverPage(BasePage):
         return Select(self.find(self.SORT)).first_selected_option.get_attribute("value")
 
     def apply(self, sort=None, team=None):
-        """Changes the controls and waits for the re-rendered table."""
-        body = self.driver.find_element(By.TAG_NAME, "body")
+        """Changes the controls, submits, and waits for the re-rendered table.
+
+        The outcome is 'a new document whose table has finished rendering', so
+        that is what is waited on. Checking the select values instead would not
+        work: they already hold the requested values on the OLD page, because
+        we just set them there.
+        """
         if sort is not None:
             self.select_option(self.SORT, sort)
         if team is not None:
             self.select_option(self.TEAM, team)
-        self.click(self.APPLY)
-        self.wait_stale(body)
+        self.submit_and_wait(self.APPLY)
+        # Either rows or the empty state -- a filter matching nothing is a
+        # valid outcome, and waiting only for rows would hang on it.
+        self.wait_until(
+            lambda d: d.find_elements(*self.ROWS) or d.find_elements(*self.EMPTY),
+            "waiver table did not render after applying filters",
+        )
         return self

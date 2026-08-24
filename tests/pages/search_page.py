@@ -21,11 +21,19 @@ class SearchPage(BasePage):
         return self
 
     def search_for(self, term):
-        body = self.driver.find_element(By.TAG_NAME, "body")
+        """Submits, then waits for a settled result state.
+
+        Any of the three states is a valid outcome, so the wait accepts
+        whichever one rendered rather than assuming results came back.
+        """
         self.type_into(self.INPUT, term)
-        self.click(self.SUBMIT)
-        self.wait_stale(body)
-        self.wait_visible(self.RESULTS)
+        self.submit_and_wait(self.SUBMIT, self.RESULTS)
+        self.wait_until(
+            lambda d: (d.find_elements(*self.ROWS)
+                       or d.find_elements(*self.EMPTY)
+                       or d.find_elements(*self.PROMPT)),
+            f"search for {term!r} did not settle into a result state",
+        )
         return self
 
     def names(self):

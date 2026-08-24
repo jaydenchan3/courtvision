@@ -410,3 +410,53 @@ This is the same principle as the seed fingerprint earlier in this file: **a
 determinism claim needs a determinism test.** Asserting that tests are
 independent proves nothing; shuffling them until a dependent one fails is what
 proves it.
+
+### What random ordering actually caught
+
+The guardrail paid for itself on its first CI run. Seed 2499299644 failed
+`test_clearing_the_filter_restores_the_table` with **"Node with given id does
+not belong to the document"**, raised from `wait_stale` inside
+`WaiverPage.apply`.
+
+It never reproduced locally -- 4 attempts on that exact seed, plus 8 earlier
+runs on other seeds, all green. CI runners are slower and more contended, which
+is precisely when the window opens. So the diagnosis came from reading
+Selenium's source rather than from a local repro:
+
+    def _predicate(_):
+        try:
+            element.is_enabled()      # forces a staleness check
+            return False
+        except StaleElementReferenceException:
+            return True
+
+`staleness_of` treats **only** `StaleElementReferenceException` as success.
+While Chrome is swapping documents it can instead raise a generic
+`WebDriverException`, which is not caught, escapes `WebDriverWait.until`
+entirely, and fails the test outright -- not even as a timeout. The wait was
+never able to survive that timing.
+
+**Same class as the login race, third occurrence, so the fix was systemic.**
+All four `wait_stale` call sites -- roster add, roster remove, waiver apply,
+search submit -- keyed on *element* identity. They now key on *document*
+identity: `submit_and_wait` stamps a marker on `window`, clicks, and waits for
+the marker to disappear, because a new document gets a fresh `window`. No
+element reference is involved, so there is nothing to go stale and no node id
+to become invalid. A `wait_until` helper treats any `WebDriverException` raised
+mid-navigation as "ask again" rather than letting it escape the poll.
+
+Each call site then waits on its **actual outcome** rather than on the reload:
+the added row is present (or the add was refused), the removed row is gone, the
+waiver table has rows or an empty state, the search settled into one of its
+three states. A wait that asserts the outcome cannot pass against the
+pre-submit page, which is the failure mode the earlier waits all shared.
+
+Verified across 9 full-suite runs -- the CI seed twice plus seven fresh seeds
+(1201282436, 780594957, 2316278854, 3540198208, 1041203451, 1437594772,
+2272543930) -- 125 green every time.
+
+The lesson worth carrying: **wait on the result, never on an artefact of how the
+browser got there.** Element identity, staleness, and reload signals are all
+proxies, and every proxy this suite has used has eventually raced. And the
+guardrail did its job in the way that matters most -- it found, on a machine
+that was not mine, a bug that 8 local seeds had missed.
