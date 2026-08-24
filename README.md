@@ -83,12 +83,31 @@ python -m venv .venv
 .venv\Scripts\activate          # Windows;  source .venv/bin/activate on macOS/Linux
 pip install -r requirements.txt
 
-cp .env.example .env             # optional: only needed to re-run the API spike
+cp .env.example .env             # optional: only for refresh.py and the API spike
 python seed.py
 python -m flask --app app:create_app run
 ```
 
 Then open http://127.0.0.1:5000 and sign in with **demo** / **courtvision**.
+
+## Refresh live data (optional)
+
+`refresh.py` fetches teams, players and games from the API and upserts them into
+the same SQLite cache the app reads. It runs on its own, never during a page
+load — the free tier allows 5 requests a minute, so the API cannot sit in a
+request path.
+
+It needs `BALLDONTLIE_API_KEY` in your `.env`. **The app does not require a
+key** — without one it runs entirely on seeded data, which is how the test suite
+and CI run it too.
+
+```bash
+python refresh.py
+```
+
+Failures are safe: rate limits, outages and unexpected responses all leave the
+existing cached data intact, and the app carries on serving it. The failure
+modes are covered by [the unit tests](tests/unit/test_nba_api.py).
 
 ## Run the tests
 
