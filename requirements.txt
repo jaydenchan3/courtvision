@@ -11,3 +11,10 @@ python-dotenv==1.2.2
 # and this removes the whole class of it.
 selenium==4.47.0
 pytest==9.1.1
+
+# Shuffles test order on every run, so a test that secretly depends on another
+# fails immediately instead of lurking until the order happens to change. This
+# suite has already had two such bugs -- leaked session cookies and a wait that
+# raced -- and both only appeared in a full run. The seed is printed each run,
+# so any failure is reproducible with --randomly-seed=<n>.
+pytest-randomly==4.1.0

@@ -374,3 +374,39 @@ skipped and counted in `result.skipped` rather than being allowed to fail the
 whole refresh on a foreign key. The schema needed no change to support a clean
 upsert — natural keys and `ON CONFLICT(id) DO UPDATE` were already the right
 shape.
+
+---
+
+## Random test ordering as an isolation guardrail
+
+`pytest-randomly` shuffles the order of every run and prints the seed in the
+header. Nothing about the suite asks for a particular order, so anything that
+depends on one is a bug — and this makes that bug fail immediately instead of
+waiting for the order to change by accident.
+
+**It exists because this suite has already had two of those bugs, and both
+hid.** The session-scoped driver leaked cookies between tests, so five auth
+tests passed alone and failed together. `LoginPage.sign_in` waited on
+`staleness_of`, which raced about one full run in ten and blamed a different
+test each time. Both were found by luck — running the whole suite at the right
+moment — and nothing in the setup would have caught either one deliberately.
+Random ordering makes that class of failure surface on its own.
+
+**A failure is reproducible.** Every run prints `Using --randomly-seed=<n>`, so
+a red run replays exactly with `pytest --randomly-seed=<n>`. Verified: the same
+seed collects an identical order twice, and a different seed collects a
+different one. That matters for CI most of all — the seed is in the log, so a
+failure that only appears on GitHub can still be reproduced locally.
+
+CI runs bare `pytest`, so it picks up the shuffle automatically. Every push now
+re-checks isolation from a different angle rather than testing the same
+ordering forever.
+
+**Result: 8 consecutive full-suite runs on 8 different seeds, all 125 green.**
+Isolation now holds under randomization, and it is enforced automatically
+rather than by anyone remembering to check.
+
+This is the same principle as the seed fingerprint earlier in this file: **a
+determinism claim needs a determinism test.** Asserting that tests are
+independent proves nothing; shuffling them until a dependent one fails is what
+proves it.
