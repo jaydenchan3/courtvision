@@ -1,7 +1,13 @@
-# CourtVision — direct runtime dependencies only.
-# Test-only dependencies (selenium, pytest, webdriver-manager) are added in
-# Phase 3, the phase that actually uses them.
+# CourtVision dependencies.
 
+# Runtime
 Flask==3.1.3
 requests==2.34.2
 python-dotenv==1.2.2
+
+# End-to-end test suite. Selenium 4 resolves the matching chromedriver itself
+# via Selenium Manager, so there is no webdriver-manager and no driver path to
+# keep in sync -- driver/browser version mismatch is a classic Selenium failure
+# and this removes the whole class of it.
+selenium==4.47.0
+pytest==9.1.1

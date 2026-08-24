@@ -121,6 +121,19 @@ CACHE_TTL = {
 }
 
 
+def use_database(path):
+    """Point the whole application at a different SQLite file.
+
+    The test suite calls this with a temp file so it never touches the
+    developer's courtvision.db. Test isolation starts here: without a
+    throwaway database, a suite that adds and removes roster players would
+    mutate real state and stop being repeatable.
+    """
+    global DB_PATH
+    DB_PATH = pathlib.Path(path)
+    return DB_PATH
+
+
 def get_connection():
     """Open a connection with foreign keys ON and dict-like rows.
 
