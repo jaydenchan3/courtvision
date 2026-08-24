@@ -190,3 +190,57 @@ Entries still to come, per the build plan:
   - CI readiness check
   - Test-plan technique mapping
 -->
+
+---
+
+## The E2E test suite: isolation, waits, and locators
+
+29 Selenium tests across five areas: auth (7), dashboard (6), roster (7),
+waiver (5), search (4). Green twice in a row and green with the files run in
+reverse order.
+
+**Isolation has two halves, and forgetting the second one caused a real bug.**
+The database is re-seeded before every test by an autouse fixture, so state
+from one test cannot leak into the next. That alone was not enough: the driver
+is session scoped, so its **cookies outlived each test**. A test that logged in
+left the next one already authenticated, `/login` redirected instead of
+rendering a form, and five auth tests failed in the suite while passing
+individually. The fixture now clears cookies as well as re-seeding. The general
+lesson: when a client is shared for speed, every piece of state it carries has
+to be reset, not just the server's.
+
+**Scope is chosen per cost.** Chrome and the HTTP server are session scoped
+because launching a browser per test would dominate the runtime; the data is
+function scoped because sharing it would make tests order-dependent. Share the
+expensive thing, reset the state.
+
+**No implicit wait is set anywhere, and there is no `time.sleep` in the
+suite.** Implicit and explicit waits do not compose — mixing them produces
+unpredictable, often much longer, timeouts. Every wait is a `WebDriverWait` on
+a named `expected_condition`.
+
+**The dashboard is deliberately asynchronous.** It serves a shell and fetches
+its data behind a 400 ms server-side delay. `wait_loaded()` waits for *both*
+the spinner becoming invisible and the content becoming visible, because
+waiting on only one would pass against a half-rendered page. Form-post pages
+wait on `staleness_of` the old DOM before reading the new one, which is what
+stops a query from reading the pre-navigation page on a slow machine.
+
+**Locators are `id` and `data-testid` only** — never CSS classes, never
+absolute XPath, never written inline in a test. Classes exist for styling and a
+restyle would break the suite for reasons unrelated to behaviour. Table rows
+are addressed by `data-id`, not by index, because row position shifts as
+players are added and removed.
+
+**Message assertions import the constants from `app.server`** rather than
+pasting the text, so rewording a message does not fail a test that is not about
+wording — which is what trains a team to edit tests until they mean nothing.
+
+**A zero-games state is reachable via `?date=`.** The empty-state test would
+otherwise depend on the calendar, and a test that only passes on some days is a
+test nobody trusts.
+
+**One test bug worth recording.** The waiver sort assertion derived a surname
+with `name.split()[-1]`, which returns `"III"` for "Marvin Bagley III". The app
+was correct and the test was wrong. Verifying the failure rather than assuming
+the app had broken is what separated the two.

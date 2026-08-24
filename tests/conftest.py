@@ -107,17 +107,29 @@ def wait(driver):
 
 
 @pytest.fixture(autouse=True)
-def fresh_data(test_db, request):
-    """Reset the database to the identical seeded state before every test.
+def fresh_state(test_db, request):
+    """Reset BOTH halves of the shared state before every test.
 
-    This is what makes tests independent and any-order: a test that adds or
-    removes roster players cannot influence the next one. Re-seeding under a
-    running server is safe because the app opens a connection per request and
-    closes it at teardown, so nothing holds a stale handle.
+    Server state: re-seed the database, so a test that adds or removes roster
+    players cannot influence the next one. Safe under a running server because
+    the app opens a connection per request and closes it in teardown.
+
+    Browser state: the driver is session scoped, so its cookies outlive a test.
+    Without clearing them, a test that logs in leaves the next one already
+    authenticated -- /login then redirects instead of rendering a form, and
+    tests pass alone but fail in a suite. Resetting the database is not
+    sufficient isolation when the client is shared too.
     """
-    if "live_server" in request.fixturenames or "driver" in request.fixturenames:
+    needs_server = "live_server" in request.fixturenames
+    if needs_server or "driver" in request.fixturenames:
         import seed
         seed.seed()
+    if needs_server and "driver" in request.fixturenames:
+        driver = request.getfixturevalue("driver")
+        base = request.getfixturevalue("live_server")
+        # Cookies can only be cleared while on the origin that set them.
+        driver.get(base + "/healthz")
+        driver.delete_all_cookies()
     yield
 
 
