@@ -40,3 +40,42 @@ jobs:
       # entirely on seeded data, so CI never touches the rate-limited API.
       - name: Run end-to-end tests
         run: python -m pytest
+
+  container:
+    name: Same suite, inside the image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # ADDITIVE, and deliberately non-blocking. The native job above is the
+    # gate. The containerized e2e layer is green when the container has the
+    # machine to itself, but flakes under host contention -- see the Docker
+    # entry in DECISIONS.md -- and that is not root-caused yet. Gating on a
+    # known-flaky environment would train everyone to ignore red builds, which
+    # is worse than not gating. Remove continue-on-error once it is understood.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t courtvision:ci .
+
+      # shm-size matters: Chrome maps shared memory for renderer processes and
+      # Docker's 64MB default crashes tabs.
+      - name: Run the full suite in the container
+        run: |
+          mkdir -p reports
+          docker run --rm --shm-size=1g \
+            -e TEST_ARTIFACTS=/reports \
+            -v "$PWD/reports:/reports" \
+            courtvision:ci python -m pytest --junitxml=/reports/junit.xml
+
+      # A headless container run cannot be watched, so the URL, title and
+      # screenshot captured on failure are the only record of what the browser
+      # saw. if: always() because they matter most when the step above failed.
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-test-reports
+          path: reports/
+          if-no-files-found: ignore

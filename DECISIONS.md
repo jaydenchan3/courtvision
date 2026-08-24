@@ -460,3 +460,102 @@ browser got there.** Element identity, staleness, and reload signals are all
 proxies, and every proxy this suite has used has eventually raced. And the
 guardrail did its job in the way that matters most -- it found, on a machine
 that was not mine, a bug that 8 local seeds had missed.
+
+---
+
+## Containerizing the app and the suite
+
+One image, two uses: serve the app, or run all 125 tests inside it with Chrome
+already present. `docker compose up app` and `docker compose run --rm tests`.
+Deliberately NOT in scope: Kubernetes, multiple services, or Docker as the only
+way to run this. The plain `python` workflow is still the primary path and is
+unchanged -- verified by running the native suite green with every new
+environment variable unset.
+
+**Why containerize a test suite at all.** The e2e layer is the part of this
+project most exposed to its environment: it needs a browser, a matching driver,
+and enough machine to run them. That is the classic source of "passes on my
+laptop, fails in CI" -- and this suite has already been bitten by exactly that
+divergence once, when a wait raced only on the CI runner. An image pins the
+browser, the driver and the OS libraries together, so the environment stops
+being a variable.
+
+**Chromium and its driver come from apt, not Selenium Manager.** Selenium
+Manager would download a driver on first run, which needs network access during
+the test run and makes the image's behaviour depend on when it executes.
+Installing `chromium` and `chromium-driver` as distro packages means the two
+versions are matched by the package manager -- verified identical at
+151.0.7922.137 -- so browser/driver mismatch, the classic Selenium failure,
+cannot occur. `conftest` reads `CHROME_BIN` and `CHROMEDRIVER_BIN` when set and
+falls back to Selenium Manager when they are not, so the same test code runs in
+both places.
+
+**Seeding happens at container start, not at build.** `seed.py` dates its three
+games to the current US/Eastern date. A database baked into the image would be
+stale the next day and the dashboard's "games tonight" assertions would fail for
+reasons unrelated to the code. This is the same determinism concern as the seed
+itself, one layer out.
+
+**Layer order is load-bearing.** `requirements.txt` is copied and installed
+before the application code, because Docker invalidates every layer after the
+first changed one. Copying the tree first would re-run `pip install` on every
+template edit.
+
+**The volume exists so failure evidence survives the container.** A headless run
+cannot be watched, so a failure hook writes the URL, page title and a screenshot
+for any failed browser test into `/reports`, which compose mounts from the host,
+alongside the JUnit XML. Without the volume all of that dies with the container
+-- the same reason CI uploads artefacts. This is not hypothetical: the hook is
+what produced the evidence below.
+
+### An unresolved flake, stated plainly
+
+The containerized e2e layer is **green when the container has the host to
+itself** -- 8 consecutive full runs, 125 each, around 53s -- and **flakes at
+roughly one run in four when the host is contended**, for example while images
+are building or with the `app` service running alongside. Failing runs take
+~80s against ~53s for green ones, and the correlation with duration is exact.
+
+The failure hook captured two distinct signatures:
+
+* **Session lost.** The browser sat at `/login?next=/roster/add` and
+  `/login?next=/waiver`, mid-test, after the `logged_in` fixture had already
+  verified an authenticated page rendered. The app behaved correctly; the
+  request simply arrived without a valid session.
+* **A wait expiring on a starved server.** The browser was on the dashboard
+  with the right title, and a wait timed out while the dev server had not yet
+  finished the fetch.
+
+**What was ruled out.** A fixed `FLASK_SECRET_KEY` looked like a fix at 4/4
+green -- until the control run, with the random key restored under the same
+conditions, also went 4/4 green. The variable was host contention, not the
+signing key, and the hypothesis was rejected rather than shipped as a fix.
+Resources are not capped either: the container sees 16 CPUs, 15.8GB and 1GB of
+`/dev/shm`.
+
+**What was genuinely fixed along the way**, each for a stated reason rather than
+to make a test pass:
+
+* `WaiverPage.load()` waited for nothing at all, while every accessor read with
+  `find_elements` and no wait. On a slower machine a read could land before the
+  table rendered and quietly return an empty list -- which looks like a result,
+  not a failure. It now waits for readiness.
+* The `logged_in` fixture could hand back an unauthenticated browser, because
+  `sign_in()` resolves on either outcome. It now verifies the authenticated nav,
+  so a failed login fails at the cause instead of as a timeout three steps
+  later.
+* Wait budgets are now `SELENIUM_WAIT_TIMEOUT`, 10s natively and 30s in the
+  image. A wait that expires while the app is still working reports a failure
+  that is not there; the waits themselves are unchanged and still return the
+  instant their condition holds.
+* `DASHBOARD_DELAY_MS` is 1500 in the image. `driver.get()` returns at the load
+  event, but `dashboard.js` starts its fetch at `DOMContentLoaded`, which is
+  earlier -- so on a slow container the 400ms fetch had already resolved and the
+  spinner was gone before the test could observe it. Widening the delay widens
+  the window.
+
+**The CI container job is therefore additive and non-blocking.** The native job
+remains the gate. Gating on an environment that is known to flake would train
+everyone to ignore red builds, which costs more than the signal is worth --
+the same argument as the flake entries above. `continue-on-error` comes off when
+the contention behaviour is understood, not before.

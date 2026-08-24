@@ -1,0 +1,44 @@
+# Everything here would otherwise be uploaded to the daemon as build context and
+# baked into the image. A lean context matters for three reasons: the upload is
+# faster, the image is smaller, and -- most importantly -- a stray .env or
+# courtvision.db must never end up inside a distributable image.
+
+# Secrets. Never in an image.
+.env
+
+# Host-specific and rebuildable. .venv holds Linux-incompatible Windows
+# binaries with absolute paths baked in; the image installs its own.
+.venv/
+venv/
+
+# Generated state. The entrypoint runs seed.py, so a copied database would only
+# be a stale one.
+*.db
+*.sqlite
+*.sqlite3
+
+# Build artefacts and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# History and tooling
+.git/
+.github/
+.gitignore
+replacements.txt
+
+# Test output, which the compose volume maps in from the host instead
+reports/
+screenshots/
+
+# Editor and OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Docs the running image has no use for. spikes/samples/*.json is NOT excluded:
+# seed.py reads it, so the image genuinely needs it.
+*.md
+!README.md

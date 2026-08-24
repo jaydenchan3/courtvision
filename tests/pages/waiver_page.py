@@ -17,7 +17,19 @@ class WaiverPage(BasePage):
     EMPTY = (By.CSS_SELECTOR, '[data-testid="waiver-empty"]')
 
     def load(self, **params):
+        """Navigate and wait for the page to be READY before any read.
+
+        This used to return immediately. Every accessor below reads with
+        find_elements and no wait, so on a slower machine -- a container, or CI
+        -- a read could land before the table rendered and quietly return an
+        empty list, which looks like a legitimate result rather than a failure.
+        """
         self.visit(**params)
+        self.wait_visible(self.SORT)
+        self.wait_until(
+            lambda d: d.find_elements(*self.ROWS) or d.find_elements(*self.EMPTY),
+            "waiver table did not render",
+        )
         return self
 
     def names(self):

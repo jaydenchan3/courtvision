@@ -22,6 +22,9 @@ Three deliberate Selenium decisions, unchanged:
 3. Readiness is polled, never slept on.
 """
 
+import os
+import pathlib
+import re
 import socket
 import threading
 import time
@@ -29,14 +32,45 @@ import time
 import pytest
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.support.ui import WebDriverWait
 from werkzeug.serving import make_server
 
 from app import create_app
 from app.data import models
 
-WAIT_TIMEOUT = 10          # seconds, for every explicit wait
+WAIT_TIMEOUT = int(os.environ.get("SELENIUM_WAIT_TIMEOUT", "10"))
 READY_TIMEOUT = 20         # seconds, for the server to answer /healthz
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    """On a browser-test failure, save where the browser actually was.
+
+    A headless run cannot be watched, so a timeout waiting for an element tells
+    you nothing about why -- the single most useful fact is usually that the
+    browser was on a different page than the test assumed. URL, title and a
+    screenshot are written to the artifacts directory, which docker-compose
+    mounts from the host so they outlive the container.
+    """
+    report = yield
+    if report.when != "call" or not report.failed:
+        return report
+    driver = item.funcargs.get("driver") if hasattr(item, "funcargs") else None
+    if driver is None:
+        return report
+
+    out = pathlib.Path(os.environ.get("TEST_ARTIFACTS", "reports"))
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        name = re.sub(r"[^A-Za-z0-9_.-]", "_", item.nodeid)[:120]
+        (out / f"{name}.txt").write_text(
+            f"url:   {driver.current_url}\ntitle: {driver.title}\n", encoding="utf-8")
+        driver.save_screenshot(str(out / f"{name}.png"))
+    except Exception:
+        # Diagnostics must never turn a test failure into an error.
+        pass
+    return report
 
 
 def _free_port():
@@ -125,17 +159,40 @@ def live_server(test_db):
 def driver():
     """One headless Chrome for the whole session.
 
-    Selenium Manager resolves the matching chromedriver automatically, so
-    there is no driver binary to install or version to keep in sync. Quitting
-    in teardown matters: a driver that is not quit leaves orphaned chrome and
-    chromedriver processes behind on every run.
+    On a laptop, Selenium Manager resolves the matching chromedriver itself, so
+    there is nothing to install or pin. In the container CHROME_BIN and
+    CHROMEDRIVER_BIN point at the distro's chromium packages instead, which
+    keeps the image self-contained: no driver download at test time, and browser
+    and driver versions matched by the package manager. Same test code either
+    way -- when the variables are unset this behaves exactly as before.
+
+    Quitting in teardown matters: a driver that is not quit leaves orphaned
+    chrome and chromedriver processes behind on every run.
     """
     options = Options()
     options.add_argument("--headless=new")
+    # --no-sandbox is required as root in a container; --disable-dev-shm-usage
+    # avoids Chrome crashing on the default 64MB /dev/shm that Docker provides.
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
-    drv = webdriver.Chrome(options=options)
+    # Trim work that a headless test browser never needs. None of this changes
+    # what is being tested; it lowers Chrome's startup and background cost,
+    # which is what pushes a contended container past its wait budgets.
+    for flag in ("--disable-gpu", "--disable-extensions", "--no-first-run",
+                 "--no-default-browser-check", "--disable-background-networking",
+                 "--disable-renderer-backgrounding",
+                 "--disable-backgrounding-occluded-windows"):
+        options.add_argument(flag)
+
+    browser = os.environ.get("CHROME_BIN")
+    if browser:
+        options.binary_location = browser
+
+    driver_path = os.environ.get("CHROMEDRIVER_BIN")
+    service = ChromeService(executable_path=driver_path) if driver_path else None
+
+    drv = webdriver.Chrome(options=options, service=service)
     yield drv
     drv.quit()
 
@@ -177,9 +234,22 @@ def fresh_browser_state(request):
 
 @pytest.fixture
 def logged_in(driver, live_server):
-    """Most browser tests start authenticated; the auth tests do not use this."""
+    """Most browser tests start authenticated; the auth tests do not use this.
+
+    The sign-in is verified before the fixture hands back. sign_in() resolves on
+    either outcome -- navigated, or an error appeared -- so on its own it can
+    return with the browser still anonymous, and the test then fails somewhere
+    downstream with a timeout that points at the wrong thing. Asserting the
+    authenticated nav here fails at the cause instead.
+    """
+    from tests.pages.base_page import BasePage
     from tests.pages.login_page import LoginPage
+
     page = LoginPage(driver, live_server)
     page.load()
     page.sign_in("demo", "courtvision")
+    page.wait_until(
+        lambda d: d.find_elements(*BasePage.NAV),
+        "logged_in fixture: sign-in did not produce an authenticated session",
+    )
     return page

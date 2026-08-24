@@ -9,12 +9,21 @@ Page objects hold LOCATORS and ACTIONS. They do not assert. Tests call these
 methods and make the assertions themselves.
 """
 
+import os
+
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
-DEFAULT_TIMEOUT = 10
+# An explicit wait must outlast the slowest legitimate response in the
+# environment it runs in. 10s suits a laptop; a contended container or CI
+# runner needs more, and a wait that expires while the app is still working
+# is a mis-calibrated wait, not a bug. Raising it costs nothing when things
+# are fast -- waits return as soon as the condition holds.
+DEFAULT_TIMEOUT = int(os.environ.get("SELENIUM_WAIT_TIMEOUT", "10"))
+# For checking that something is ABSENT, where the wait must expire.
+SHORT_TIMEOUT = max(2, DEFAULT_TIMEOUT // 5)
 
 
 class BasePage:
@@ -113,10 +122,10 @@ class BasePage:
         self.wait_present(locator)
         return self.driver.find_elements(*locator)
 
-    def is_present(self, locator, timeout=2):
+    def is_present(self, locator, timeout=None):
         """Short-timeout existence check, for asserting a thing is ABSENT."""
         try:
-            WebDriverWait(self.driver, timeout).until(
+            WebDriverWait(self.driver, timeout or SHORT_TIMEOUT).until(
                 EC.presence_of_element_located(locator))
             return True
         except TimeoutException:

@@ -1,0 +1,45 @@
+# Two services from one image: serve the app, or run the suite against it.
+# Docker is a convenience here, not a requirement -- the plain python workflow
+# in the README still works untouched.
+
+services:
+  app:
+    build: .
+    image: courtvision:latest
+    ports:
+      - "5000:5000"
+    environment:
+      # Without this the app generates a random key at startup and sessions die
+      # on restart. Fine for a local demo; a real deployment supplies its own.
+      FLASK_SECRET_KEY: local-dev-only-not-a-secret
+    # /healthz exists so readiness can be polled rather than slept on -- the
+    # same reason CI and the test fixtures use it.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  tests:
+    build: .
+    image: courtvision:latest
+    # The suite starts its own Flask server on a free port inside this
+    # container, so it does not depend on the app service being up.
+    command: ["python", "-m", "pytest", "--junitxml=/reports/junit.xml"]
+    environment:
+      # Where the failure hook writes the URL, title and screenshot of a failed
+      # browser test. Pointed at the mounted volume so they survive the
+      # container -- a headless run cannot be watched, so this is the only
+      # record of where the browser actually was.
+      TEST_ARTIFACTS: /reports
+    # Chrome maps shared memory for renderer processes and Docker's default
+    # /dev/shm is 64MB, which crashes tabs under load. --disable-dev-shm-usage
+    # in the driver options already avoids it; raising the limit means the flag
+    # is a belt-and-braces measure rather than the only thing holding it up.
+    shm_size: 1gb
+    volumes:
+      # Test output survives the container. Without a volume, the junit XML dies
+      # with the container and there is nothing to inspect after a red run --
+      # the same reason CI uploads artefacts.
+      - ./reports:/reports

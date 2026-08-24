@@ -109,6 +109,30 @@ Failures are safe: rate limits, outages and unexpected responses all leave the
 existing cached data intact, and the app carries on serving it. The failure
 modes are covered by [the unit tests](tests/unit/test_nba_api.py).
 
+## Run with Docker (optional)
+
+One image serves the app and runs the whole suite, Chrome included, so the
+end-to-end layer stops depending on what happens to be installed on the
+machine. The plain `python` workflow above is unchanged and remains the primary
+path.
+
+```bash
+docker compose up app                 # http://127.0.0.1:5000
+docker compose run --rm tests         # all 125 tests inside the container
+```
+
+Test output lands in `./reports/` via a mounted volume — the JUnit XML, plus the
+URL, page title and a screenshot for any failed browser test. A headless run
+cannot be watched, so those artefacts are the only record of what the browser
+actually saw.
+
+Two notes. Give the container the machine to itself: the e2e layer is reliable
+when it has the CPU, and flakes under contention (running `tests` while `app` is
+up will do it) — see [DECISIONS.md](DECISIONS.md) for the evidence. And the
+image installs `chromium` and `chromium-driver` from the distro rather than
+letting Selenium Manager fetch a driver at runtime, which keeps browser and
+driver versions matched by construction and needs no network during the run.
+
 ## Run the tests
 
 Requires Chrome. Selenium Manager fetches the matching driver automatically —
