@@ -309,3 +309,68 @@ the outcome through a flash. PRG is correct for a form — it stops a browser
 refresh from re-submitting the add — so **the tests were changed, not the
 route**. Same discipline as the earlier `split()[-1]` surname bug: when a new
 test fails, the app is not automatically the thing that is wrong.
+
+---
+
+## The refresh path, and testing failure instead of success
+
+`app/data/nba_api.py` is the live-data path. It is **out of band by design**: no
+route imports it, nothing in a request touches the network, and the app serves
+SQLite whether a refresh has ever succeeded or not. The measured 5 req/min tier
+makes any other arrangement impossible. `python refresh.py` runs it.
+
+**Fetch everything, validate, then write once.** A refresh fetches and validates
+all pages before opening a transaction, then writes inside a single `with conn:`
+block. A 429 on page two, a malformed record, or a dropped connection leaves the
+cache byte-for-byte unchanged. Writing as pages arrive would leave a silently
+truncated view of the data behind — which is worse than not refreshing, because
+nothing about the app would look wrong.
+
+**Failure is a value, not an exception.** `refresh_cache` returns a
+`RefreshResult` with `.ok`, `.kind` and `.reason`. Callers check it. A scheduled
+job should skip one refresh, not die.
+
+**The tests are about failure, not success.** Nine of the failure modes are
+covered with mocks and no network is ever touched: 429, 401/403/500/503,
+non-JSON bodies, missing `data`, records missing required keys, a player whose
+`team` is not an object, timeouts, connection errors, and a missing API key
+(which must fail *before* any network call — asserted with
+`mock_get.assert_not_called()`). Every one asserts a **fingerprint of every row
+of every cache table is identical before and after**, because row counts alone
+would not notice a refresh that overwrote values.
+
+Two seams are mocked: `fetch_fn` is injected into `refresh_cache`, so transport
+failures need no HTTP at all; `requests.get` is patched for the tests that
+exercise `http_get` itself. stdlib `unittest.mock` was sufficient — no new
+dependency.
+
+**Graceful degradation is now proven, not asserted.** The earlier entry claimed
+the app degrades to serving cached data when the source is unavailable. There is
+now a test that fails a refresh and then exercises every read the app performs,
+asserting all of them still return the cached rows. That closes the loop.
+
+**Idempotency, again.** Replaying the same response produces an identical
+fingerprint and identical row counts — the natural-key upsert working as
+designed. Refreshing a renamed team updates the row in place rather than adding
+a second one.
+
+### One deliberate broad catch, and why
+
+`refresh_cache` ends with `except Exception`. It is the only such catch in the
+codebase and it was added because a test caught the code contradicting its own
+comment: the comment promised nothing unanticipated would escape, while the
+`except` clause listed specific types, so a `RuntimeError` propagated. Rather
+than narrow the test, the code was made to match its documented contract — this
+is a boundary for a background job, and its whole purpose is to not break its
+caller. Nothing is hidden: the exception type and message are both reported on
+the result. `BaseException` still propagates, so Ctrl-C and `SystemExit` behave
+normally.
+
+### Rows referencing an unknown team are skipped, not fatal
+
+`/teams` carries 15 defunct franchises that the seed deliberately excludes, so a
+fetched player or game can reference a team we do not hold. Those rows are
+skipped and counted in `result.skipped` rather than being allowed to fail the
+whole refresh on a foreign key. The schema needed no change to support a clean
+upsert — natural keys and `ON CONFLICT(id) DO UPDATE` were already the right
+shape.
